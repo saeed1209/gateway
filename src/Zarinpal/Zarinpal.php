@@ -2,6 +2,8 @@
 
 namespace Larabookir\Gateway\Zarinpal;
 
+use Illuminate\Support\Facades\Cache;
+use Larabookir\Gateway\Models\Merchant;
 use DateTime;
 use Illuminate\Support\Facades\Request;
 use Larabookir\Gateway\Enum;
@@ -81,7 +83,29 @@ class Zarinpal extends PortAbstract implements PortInterface
 	 */
 	protected $zarinGateUrl = 'https://www.zarinpal.com/pg/StartPay/$Authority/ZarinGate';
 
-	public function boot()
+    /**
+     * Address of zarin gate for initialize
+     *
+     * @var string
+     */
+    protected $instance;
+
+
+	function __construct()
+    {
+        $this->setEmail(request()->get('email'));
+
+        $this->instance = Cache::remember('merchant',3,function (){
+
+            return Merchant::where('email',$this->email)
+                            ->where('merchantable_type','App\\Zarinpal')
+                            ->first();
+        });
+
+
+    }
+
+    public function boot()
 	{
 		$this->setServer();
 	}
@@ -111,7 +135,8 @@ class Zarinpal extends PortAbstract implements PortInterface
 	 */
 	public function redirect()
 	{
-		switch ($this->config->get('gateway.zarinpal.type')) {
+
+		switch ($this->instance->type) {
 			case 'zarin-gate':
 				return \Redirect::to(str_replace('$Authority', $this->refId, $this->zarinGateUrl));
 				break;
@@ -153,7 +178,7 @@ class Zarinpal extends PortAbstract implements PortInterface
 	function getCallback()
 	{
 		if (!$this->callbackUrl)
-			$this->callbackUrl = $this->config->get('gateway.zarinpal.callback-url');
+			$this->callbackUrl = $this->instance->callback-url;
 
 		return $this->makeCallback($this->callbackUrl, ['transaction_id' => $this->transactionId()]);
 	}
@@ -170,12 +195,12 @@ class Zarinpal extends PortAbstract implements PortInterface
 		$this->newTransaction();
 
 		$fields = array(
-			'MerchantID' => $this->config->get('gateway.zarinpal.merchant-id'),
+			'MerchantID' => $this->instance->merchant_id,
 			'Amount' => $this->amount,
 			'CallbackURL' => $this->getCallback(),
-			'Description' => $this->description ? $this->description : $this->config->get('gateway.zarinpal.description', ''),
-			'Email' => $this->email ? $this->email :$this->config->get('gateway.zarinpal.email', ''),
-			'Mobile' => $this->mobileNumber ? $this->mobileNumber : $this->config->get('gateway.zarinpal.mobile', ''),
+			'Description' => $this->description ? $this->description : $this->instance->description,
+			'Email' => $this->email ? $this->email :$this->instance->email,
+			'Mobile' => $this->mobileNumber ? $this->mobileNumber : $this->instance->mobile,
 		);
 
 		try {
@@ -230,7 +255,7 @@ class Zarinpal extends PortAbstract implements PortInterface
 	{
 
 		$fields = array(
-			'MerchantID' => $this->config->get('gateway.zarinpal.merchant-id'),
+			'MerchantID' => $this->instance->merchant_id,
 			'Authority' => $this->refId,
 			'Amount' => $this->amount,
 		);
@@ -264,8 +289,9 @@ class Zarinpal extends PortAbstract implements PortInterface
 	 */
 	protected function setServer()
 	{
-		$server = $this->config->get('gateway.zarinpal.server', 'germany');
-		switch ($server) {
+
+//		$server = $this->config->get('gateway.zarinpal.server', 'germany');
+		switch ($this->instance->server) {
 			case 'iran':
 				$this->serverUrl = $this->iranServer;
 				break;
